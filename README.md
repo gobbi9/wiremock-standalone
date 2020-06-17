@@ -79,6 +79,8 @@ java -jar wiremock-standalone-2.26.3.jar --port 8765 --proxy-all="https://xkcd.c
 }
 ```
 
+## Recording a request
+
 Being a proxy alone is not that useful, however when combining it with the record function, the incoming requests are saved as stubs and can be accessed later if, for instance, the xkcd API becomes unavailable. Another use case would be accessing the saved request/responses in a Integration Test environment to make the tests run faster and more reliable since an outside network connectin is not used.
 
 For that rerun the application with `--record-mappings`:
@@ -171,7 +173,7 @@ Now let's simulate an integration test environment where no network connection t
 127.0.0.1 xkcd.com
 ```
 
-Then restart the wiremock application: `java -jar wiremock-standalone-2.26.3.jar --port 8765 --proxy-all="https://xkcd.com" --record-mappings`
+Then restart the wiremock application with recording disabled: `java -jar wiremock-standalone-2.26.3.jar --port 8765 --proxy-all="https://xkcd.com"`
 
 The xkcd API should now be unavaiable in the local machine:
 
@@ -197,4 +199,78 @@ However through the WireMock we can still access the recorded request/response m
 }
 ```
 
-Any other request to Wiremock will fail with HTTP Code 500 since the underlying API is unreachable.
+Any other request to Wiremock will fail with HTTP response status code 500 since the underlying API is unreachable.
+
+## Writing your own mapping
+
+With this feature you can map multiple requests to a single response, based on regular expressions, HTTP method type and many [more](http://wiremock.org/docs/request-matching/).
+
+### Practical use case
+
+After recording the request `GET https://xkcd.com/2319/info.0.json` we learned how this API is structured. We can now mock all posible comic ids to an example response. For that we need to create two files:
+
+`__files/sample-body.json`
+
+```json
+{
+    "month": "1",
+    "num": 9999,
+    "link": "",
+    "year": "2018",
+    "news": "",
+    "safe_title": "Mocked Title",
+    "transcript": "",
+    "alt": "alternative mocked description",
+    "img": "https://mocked.link",
+    "title": "Mocked Title",
+    "day": "1"
+}
+```
+
+`mappings/general-mapping.json`
+
+```json
+{
+  "request" : {
+    "urlPattern" : "/([0-9]*)/info.0.json",
+    "method" : "GET"
+  },
+  "response" : {
+    "status" : 200,
+    "bodyFileName": "sample-body.json",
+    "headers" : {
+      "Content-Type" : "application/json"
+    }
+  }
+}
+```
+
+> The Wiremock .jar and the folders __files and mappings must be in the same directory
+
+Restart the .jar, but now with proxying disabled:
+
+```bash
+java -jar wiremock-standalone-2.26.3.jar --port 8765
+```
+
+Now every request against WireMock that matches `/([0-9]*)/info.0.json` will return the sample-body.json response:
+
+For example `GET http://localhost:8765/1000/info.0.json`:
+
+```json
+{
+    "alt": "alternative mocked description",
+    "day": "1",
+    "img": "https://mocked.link",
+    "link": "",
+    "month": "1",
+    "news": "",
+    "num": 9999,
+    "safe_title": "Mocked Title",
+    "title": "Mocked Title",
+    "transcript": "",
+    "year": "2018"
+}
+```
+
+If proxying is activated the mocked response is still returned instead of the actual response of the underlying API.
